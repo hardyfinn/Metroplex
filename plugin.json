@@ -1,0 +1,23 @@
+{
+  "slug": "Metroplex",
+  "name": "Metroplex",
+  "version": "2.0.0",
+  "license": "GPL-3.0-or-later",
+  "brand": "Haer",
+  "author": "Haer",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "https://github.com/hardyfinn/metroplex",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "Metroplex",
+      "name": "Metroplex",
+      "description": "16-stage pulse-count sequencer with accumulators, slides, scale quantising, a menu display and two assignable CTRL knobs",
+      "tags": ["Sequencer", "Quantizer", "Clock generator"]
+    }
+  ]
+}
