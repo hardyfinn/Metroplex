@@ -13,7 +13,9 @@ enum Field {
 	F_LENGTH, F_ORDER,
 	F_SCALE, F_ROOT, F_RANGE, F_OCTAVE,
 	F_SLIDE_TYPE, F_SLIDE_AMT,
-	F_ACC_SCOPE, F_ACC_TRIG, F_ACC_MODE, F_ACC_POLAR, F_ACC_STEP, F_ACC_LIMIT,
+	F_MUT_PITCH, F_MUT_RHYTHM, F_MUT_SLIDES, F_MUT_SKIPS,
+	F_SNAP_MODE,
+	F_START,
 	NUM_FIELDS
 };
 
@@ -35,12 +37,12 @@ static const FieldInfo FIELDS[NUM_FIELDS] = {
 	{"Octave", "", -3, 3, 0},
 	{"Slide type", "", 0, NUM_SLIDE_TYPES - 1, 0},
 	{"Slide amount", "%", 0, 100, 25},
-	{"Accum scope", "", 0, 1, 0},
-	{"Accum trigger", "", 0, 1, 0},
-	{"Accum mode", "", 0, NUM_ACC_MODES - 1, 0},
-	{"Accum polarity", "", 0, 1, 0},
-	{"Accum step", "", -7, 7, 1},
-	{"Accum limit", "", 1, 16, 7},
+	{"Mutate pitch", " deg", 0, 12, 3},
+	{"Mutate rhythm", "", 0, 1, 1},
+	{"Mutate slides", "", 0, 1, 0},
+	{"Mutate skips", "", 0, 1, 0},
+	{"Snapshot switch", "", 0, 1, 1},
+	{"Start stage", "", 1, 16, 1},
 };
 
 // Text for a field's value, as the display shows it.
@@ -51,6 +53,7 @@ inline std::string fieldText(int f, int v) {
 		case F_DIV: snprintf(buf, sizeof buf, "/%d", v); break;
 		case F_GATELEN: snprintf(buf, sizeof buf, "%d%%", v); break;
 		case F_LENGTH: snprintf(buf, sizeof buf, "%d", v); break;
+		case F_START: snprintf(buf, sizeof buf, "%d", v); break;
 		case F_ORDER: return ORDER_NAMES[v];
 		case F_SCALE: return SCALES[v].name;
 		case F_ROOT: return NOTE_NAMES[v];
@@ -58,12 +61,14 @@ inline std::string fieldText(int f, int v) {
 		case F_OCTAVE: snprintf(buf, sizeof buf, "%+d", v); break;
 		case F_SLIDE_TYPE: return SLIDE_NAMES[v];
 		case F_SLIDE_AMT: snprintf(buf, sizeof buf, "%d%%", v); break;
-		case F_ACC_SCOPE: return ACC_SCOPE_NAMES[v];
-		case F_ACC_TRIG: return ACC_TRIG_NAMES[v];
-		case F_ACC_MODE: return ACC_MODE_NAMES[v];
-		case F_ACC_POLAR: return ACC_POLAR_NAMES[v];
-		case F_ACC_STEP: snprintf(buf, sizeof buf, "%+d deg", v); break;
-		case F_ACC_LIMIT: snprintf(buf, sizeof buf, "%d deg", v); break;
+		case F_MUT_PITCH:
+			if (v == 0) return "Off";
+			snprintf(buf, sizeof buf, "+-%d deg", v);
+			break;
+		case F_MUT_RHYTHM:
+		case F_MUT_SLIDES:
+		case F_MUT_SKIPS: return v ? "On" : "Off";
+		case F_SNAP_MODE: return v ? "End of cycle" : "Now";
 		default: snprintf(buf, sizeof buf, "%d", v); break;
 	}
 	return buf;
@@ -71,13 +76,19 @@ inline std::string fieldText(int f, int v) {
 
 // Fields that have names rather than numbers (shown as lists in menus).
 inline bool fieldIsNamed(int f) {
-	return f == F_ORDER || f == F_SCALE || f == F_ROOT || f == F_SLIDE_TYPE || f == F_ACC_SCOPE ||
-		f == F_ACC_TRIG || f == F_ACC_MODE || f == F_ACC_POLAR;
+	return f == F_ORDER || f == F_SCALE || f == F_ROOT || f == F_SLIDE_TYPE || f == F_MUT_RHYTHM ||
+		f == F_MUT_SLIDES || f == F_MUT_SKIPS || f == F_SNAP_MODE;
 }
 
 // ---------------------------------------------------------------- pages
 
-enum Page { PAGE_HOME, PAGE_CLOCK, PAGE_SEQ, PAGE_SCALE, PAGE_SLIDE, PAGE_ACCUM, PAGE_CTRL1, PAGE_CTRL2, NUM_PAGES };
+enum Page { PAGE_HOME, PAGE_CLOCK, PAGE_SEQ, PAGE_SCALE, PAGE_SLIDE, PAGE_MUTATE, PAGE_CTRL1, PAGE_CTRL2, PAGE_CTRL3, PAGE_CTRL4, NUM_PAGES };
+
+static const int NUM_CTRLS = 4;  // CTRL 1-2 are knobs (plus CV), CTRL 3-4 are CV inputs
+
+inline bool isCtrlPage(int p) {
+	return p >= PAGE_CTRL1 && p < PAGE_CTRL1 + NUM_CTRLS;
+}
 
 struct PageInfo {
 	const char* title;
@@ -88,27 +99,29 @@ struct PageInfo {
 static const PageInfo PAGES[NUM_PAGES] = {
 	{"HOME", 0, {}},
 	{"CLOCK", 3, {F_TEMPO, F_DIV, F_GATELEN}},
-	{"SEQUENCE", 2, {F_LENGTH, F_ORDER}},
+	{"SEQUENCE", 4, {F_START, F_LENGTH, F_ORDER, F_SNAP_MODE}},
 	{"SCALE", 4, {F_SCALE, F_ROOT, F_RANGE, F_OCTAVE}},
 	{"SLIDE", 2, {F_SLIDE_TYPE, F_SLIDE_AMT}},
-	{"ACCUMULATOR", 6, {F_ACC_SCOPE, F_ACC_TRIG, F_ACC_MODE, F_ACC_POLAR, F_ACC_STEP, F_ACC_LIMIT}},
+	{"MUTATE", 4, {F_MUT_PITCH, F_MUT_RHYTHM, F_MUT_SLIDES, F_MUT_SKIPS}},
 	{"CTRL 1", 0, {}},
 	{"CTRL 2", 0, {}},
+	{"CTRL 3", 0, {}},
+	{"CTRL 4", 0, {}},
 };
 
 // ---------------------------------------------------------------- CTRL destinations
 
-enum DestKind { DEST_KIND_NONE, DEST_KIND_DIRECT, DEST_KIND_OFFSET, DEST_KIND_DIRECTION };
+enum DestKind { DEST_KIND_NONE, DEST_KIND_DIRECT, DEST_KIND_OFFSET, DEST_KIND_MUTATE, DEST_KIND_SNAPSHOT };
 
 enum Dest {
 	DEST_NONE,
 	// direct: the knob sets the menu value itself
 	DEST_TEMPO, DEST_DIV, DEST_GATELEN, DEST_LENGTH, DEST_ORDER, DEST_SCALE, DEST_RANGE,
-	DEST_SLIDE_AMT, DEST_ACC_MODE, DEST_ACC_STEP, DEST_ACC_LIMIT,
+	DEST_SLIDE_AMT, DEST_MUT_PITCH, DEST_MUT_RHYTHM, DEST_MUT_AMOUNT,
 	// offset: noon = no change, left subtracts, right adds
 	DEST_PITCH_PRE, DEST_PITCH_POST, DEST_OCTAVE, DEST_PULSES,
-	// left = reverse, noon = freeze, right = forward
-	DEST_ACC_DIR,
+	DEST_SNAPSHOT,
+	DEST_START,
 	NUM_DESTS
 };
 
@@ -130,14 +143,15 @@ static const DestInfo DESTS[NUM_DESTS] = {
 	{"Scale", "Picks the scale", DEST_KIND_DIRECT, F_SCALE, 0},
 	{"Slider range", "Sets the slider range, 1 to 4 octaves", DEST_KIND_DIRECT, F_RANGE, 0},
 	{"Slide amount", "Sets the slide amount, 0 to 100%", DEST_KIND_DIRECT, F_SLIDE_AMT, 0},
-	{"Accum mode", "Picks Wrap, Pendulum or Hold", DEST_KIND_DIRECT, F_ACC_MODE, 0},
-	{"Accum step", "Sets the accumulator step, -7 to +7 degrees", DEST_KIND_DIRECT, F_ACC_STEP, 0},
-	{"Accum limit", "Sets the accumulator limit, 1 to 16 degrees", DEST_KIND_DIRECT, F_ACC_LIMIT, 0},
+	{"Mutate pitch", "Sets how far Mutate moves notes, off to 12 scale degrees", DEST_KIND_DIRECT, F_MUT_PITCH, 0},
+	{"Mutate rhythm", "Left half = Off, right half = On", DEST_KIND_DIRECT, F_MUT_RHYTHM, 0},
+	{"Mutate amount", "Noon = none. Adds to or takes from the MUTATE knob", DEST_KIND_MUTATE, -1, 0},
 	{"Pitch pre", "Noon = none. Shifts every note up to 12 semitones, then puts it back in the scale", DEST_KIND_OFFSET, -1, 12},
 	{"Pitch post", "Noon = none. Shifts every note up to 12 semitones after the scale (chromatic)", DEST_KIND_OFFSET, -1, 12},
 	{"Octave", "Noon = none. Shifts up to 2 octaves", DEST_KIND_OFFSET, -1, 2},
 	{"Pulse count", "Noon = none. Adds or removes up to 7 pulses on every stage", DEST_KIND_OFFSET, -1, 7},
-	{"Accum direction", "Left = runs backwards, noon = frozen, right = runs forwards", DEST_KIND_DIRECTION, -1, 0},
+	{"Snapshot", "Picks snapshot 1 to 8 across the knob's travel", DEST_KIND_SNAPSHOT, -1, 0},
+	{"Start stage", "Sets the stage the sequence starts on, 1 to 16", DEST_KIND_DIRECT, F_START, 0},
 };
 
 // Knob position plus CV (+-5 V moves the whole range), as 0..1.
@@ -157,21 +171,26 @@ inline int offsetValue(int range, float amount) {
 // Everything the module needs after the CTRL knobs are applied.
 struct Effective {
 	int value[NUM_FIELDS];
-	int owner[NUM_FIELDS];  // 0 = menu, 1 = CTRL 1, 2 = CTRL 2
+	int owner[NUM_FIELDS];  // 0 = menu, 1-4 = that CTRL
 	Settings eng;
+	float mutateOffset = 0.f;  // added to the MUTATE knob (-1..+1)
+	int snapshot = -1;         // a CTRL picks this snapshot (0..7), -1 = none
 };
 
-// prog: the menu values. dest/amount: the two CTRL knobs. transposeVolts:
-// the TRANSPOSE input (added before quantizing).
-inline void computeEffective(const int* prog, const int* dest, const float* amount, float transposeVolts, Effective* out) {
+// prog: the menu values. dest/amount: the CTRLs (count of them; a dest of
+// DEST_NONE does nothing). transposeVolts: the TRANSPOSE input (added before
+// quantizing).
+inline void computeEffective(const int* prog, const int* dest, const float* amount, float transposeVolts, Effective* out, int count = 2) {
 	for (int f = 0; f < NUM_FIELDS; f++) {
 		out->value[f] = prog[f];
 		out->owner[f] = 0;
 	}
 	float preSemis = transposeVolts * 12.f;
-	int postSemis = 0, octave = 0, pulses = 0, accDir = 1;
-	// CTRL 2 is applied last, so it wins when both set the same thing.
-	for (int k = 0; k < 2; k++) {
+	int postSemis = 0, octave = 0, pulses = 0;
+	out->mutateOffset = 0.f;
+	out->snapshot = -1;
+	// Higher-numbered CTRLs are applied later, so they win when two set the same thing.
+	for (int k = 0; k < count; k++) {
 		int d = dest[k];
 		if (d <= DEST_NONE || d >= NUM_DESTS)
 			continue;
@@ -188,13 +207,17 @@ inline void computeEffective(const int* prog, const int* dest, const float* amou
 			else if (d == DEST_OCTAVE) octave += v;
 			else if (d == DEST_PULSES) pulses += v;
 		}
-		else if (di.kind == DEST_KIND_DIRECTION) {
-			accDir = (a < 0.45f) ? -1 : (a > 0.55f) ? 1 : 0;
+		else if (di.kind == DEST_KIND_MUTATE) {
+			out->mutateOffset += (a - 0.5f) * 2.f;
+		}
+		else if (di.kind == DEST_KIND_SNAPSHOT) {
+			out->snapshot = std::min((int)(a * 8.f), 7);
 		}
 	}
 	const int* v = out->value;
 	Settings& s = out->eng;
 	s.length = v[F_LENGTH];
+	s.start = v[F_START] - 1;
 	s.order = v[F_ORDER];
 	s.scale = v[F_SCALE];
 	s.root = v[F_ROOT];
@@ -203,13 +226,7 @@ inline void computeEffective(const int* prog, const int* dest, const float* amou
 	s.preSemis = preSemis;
 	s.postSemis = postSemis;
 	s.pulseOffset = pulses;
-	s.accScope = v[F_ACC_SCOPE];
-	s.accTrigger = v[F_ACC_TRIG];
-	s.accMode = v[F_ACC_MODE];
-	s.accPolarity = v[F_ACC_POLAR];
-	s.accStep = v[F_ACC_STEP];
-	s.accLimit = v[F_ACC_LIMIT];
-	s.accDirection = accDir;
+	s.slideType = v[F_SLIDE_TYPE];
 }
 
 }  // namespace mpx

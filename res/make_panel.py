@@ -5,7 +5,6 @@
 #   pip install fonttools
 #   python3 res/make_panel.py
 import os
-import random
 from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
@@ -16,27 +15,37 @@ FONT_MED = os.environ.get("PANEL_FONT_MED", "/usr/share/fonts/opentype/inter/Int
 
 W, H = 254.0, 128.5  # 50 HP
 
-BG = "#1C1F24"
-BG_DARK = "#15171B"
-INK = "#E8E6E1"
-SOFT = "#9AA3AD"
-AMBER = "#F2A93B"
-CYAN = "#5FD0E4"
-OUTBOX = "#0F1114"
+import sys
+
+# Theme: "white" (default) writes Metroplex.svg, "dark" writes Metroplex-dark.svg.
+#   python3 res/make_panel.py dark
+THEME = sys.argv[1] if len(sys.argv) > 1 else "white"
+THEMES = {
+    "dark": dict(BG="#1C1F24", BG_DARK="#15171B", INK="#E8E6E1", SOFT="#9AA3AD", AMBER="#F2A93B",
+                 CYAN="#5FD0E4", OUTBOX="#0F1114", OUT_TEXT="#F2A93B", BUILDING="#262A31", SHADE_OPACITY="0.55"),
+    "white": dict(BG="#F2F0EB", BG_DARK="#E0DCD3", INK="#1E2126", SOFT="#6B737C", AMBER="#C2730F",
+                  CYAN="#17879C", OUTBOX="#1E2126", OUT_TEXT="#F2A93B", BUILDING="#DAD6CD", SHADE_OPACITY="0.6"),
+}
+globals().update(THEMES[THEME])
 
 # --- keep in step with src/Layout.hpp
-DISP_X, DISP_Y, DISP_W, DISP_H = 6.0, 12.0, 90.0, 28.0
-PAGE_X = [106.0, 120.0, 134.0]
+DISP_X, DISP_Y, DISP_W, DISP_H = 6.0, 12.0, 64.0, 28.0
+PAGE_X = [80.0, 94.0, 108.0]
 PAGE_Y = [21.0, 35.0]
-ENC_X, ENC_Y = 156.0, 27.0
-CTRL_X = [182.0, 206.0]
+ENC_X, ENC_Y = 127.0, 27.0
+CTRL_X = [149.0, 171.0, 193.0, 215.0]
 CTRL_Y, CTRL_BTN_Y = 24.0, 36.5
+CTRL_BTN_DX, CTRL_ATT_DX = -5.5, 5.5  # menu button left, CV attenuator right, under each knob
 RUN_X, RUN_Y, CLK_LIGHT_Y = 232.0, 21.0, 33.0
+ALL_PULSES_X, ALL_PULSES_Y = 245.5, 24.0
 STAGE_X0, STAGE_DX = 17.5, 14.6
-NUM_Y, SLIDER_Y, PULSE_Y, GATE_Y, SLIDE_Y, ACCUM_Y = 47.0, 62.0, 81.0, 90.5, 98.5, 106.5
-JACK_Y = 118.5
-IN_X0, IN_DX = 12.0, 14.0
-OUT_X = [202.0, 216.0, 230.0, 244.0]
+NUM_Y, SLIDER_Y, PULSE_Y, GATE_Y, SLIDE_Y, MUT_Y, SKIP_Y = 46.4, 61.5, 79.5, 87.0, 94.0, 101.0, 108.0
+JACK_Y = 120.2
+IN_X0, IN_DX = 12.0, 10.8  # 10 inputs
+OUT_X = [203.0, 214.5, 226.0, 237.5]
+MUTATE_X, SEED_X, SAVE_X, SNAP_X0, SNAP_DX = 120.0, 130.0, 137.5, 145.0, 6.8
+JACK_LABEL_Y = 115.0  # just above the jacks, so each label sits with its own jack
+FOOT_Y = 126.9
 
 fonts = {}
 
@@ -86,28 +95,38 @@ add(f'<rect x="{DISP_X - 0.8}" y="{DISP_Y - 0.8}" width="{DISP_W + 1.6}" height=
 add(f'<rect x="{DISP_X}" y="{DISP_Y}" width="{DISP_W}" height="{DISP_H}" rx="1.2" fill="#0B0C0E"/>')
 
 # page buttons
-page_names = [["HOME", "CLOCK", "SEQ"], ["SCALE", "SLIDE", "ACCUM"]]
+page_names = [["HOME", "CLOCK", "SEQ"], ["SCALE", "SLIDE", "MUTATE"]]
 for r in range(2):
     for c in range(3):
         add(text(page_names[r][c], PAGE_X[c], PAGE_Y[r] - 4.4, 2.0, FONT_BOLD, INK, spacing=0.06))
-add(text("press again = next row", PAGE_X[1], 41.0, 1.5, FONT_MED, SOFT))
+add(text("press again = next row", PAGE_X[1], 41.0, 1.85, FONT_MED, SOFT))
 
 # data encoder
 add(text("DATA", ENC_X, 18.2, 2.3, FONT_BOLD, AMBER, spacing=0.1))
 add(f'<circle cx="{ENC_X}" cy="{ENC_Y}" r="8.2" fill="none" stroke="{BG_DARK}" stroke-width="0.8"/>')
-add(text("drag / scroll: change", ENC_X, 38.0, 1.5, FONT_MED, SOFT))
-add(text("click: next row", ENC_X, 40.1, 1.5, FONT_MED, SOFT))
+add(text("drag: change", ENC_X, 38.0, 1.85, FONT_MED, SOFT))
+add(text("click: next row", ENC_X, 40.1, 1.85, FONT_MED, SOFT))
 
 # CTRL knobs
-for k in range(2):
+for k in range(4):
     x = CTRL_X[k]
     add(text(f"CTRL {k + 1}", x, 15.6, 2.3, FONT_BOLD, CYAN, spacing=0.08))
-    add(text("menu", x + 5.6, CTRL_BTN_Y + 0.55, 1.5, FONT_MED, SOFT, anchor="start"))
-add(text("right-click a knob to assign", (CTRL_X[0] + CTRL_X[1]) / 2, 41.0, 1.5, FONT_MED, SOFT))
+    add(text("menu", x + CTRL_BTN_DX, 41.6, 1.85, FONT_MED, SOFT))
+    add(text("CV amt", x + CTRL_ATT_DX, 41.6, 1.85, FONT_MED, SOFT))
+    add(text("-", x + CTRL_ATT_DX - 4.4, CTRL_BTN_Y + 0.8, 2.2, FONT_BOLD, SOFT))
+    add(text("+", x + CTRL_ATT_DX + 4.4, CTRL_BTN_Y + 0.8, 2.2, FONT_BOLD, SOFT))
 
 # run and clock
 add(text("RUN", RUN_X, 15.6, 2.3, FONT_BOLD, INK, spacing=0.08))
-add(text("CLK", RUN_X, CLK_LIGHT_Y + 4.6, 1.8, FONT_BOLD, SOFT))
+add(text("CLK", RUN_X, CLK_LIGHT_Y + 4.6, 2.15, FONT_BOLD, SOFT))
+
+# master pulses knob
+add(text("PULSES", ALL_PULSES_X, 15.6, 2.0, FONT_BOLD, INK, spacing=0.06))
+add(text("all stages", ALL_PULSES_X, 31.4, 1.85, FONT_MED, SOFT))
+for n, v in ((1, 0.0), (8, 1.0)):
+    import math
+    a = math.radians(-150 + 300 * v)
+    add(text(str(n), ALL_PULSES_X + 5.6 * math.sin(a), ALL_PULSES_Y - 5.6 * math.cos(a) + 0.6, 1.85, FONT_MED, SOFT))
 
 # divider
 line(4.0, 43.6, W - 4.0, 43.6, AMBER, 0.25, 'opacity="0.5"')
@@ -117,59 +136,86 @@ xs = [STAGE_X0 + STAGE_DX * i for i in range(16)]
 for g in range(4):
     if g % 2 == 1:
         x0 = xs[g * 4] - STAGE_DX / 2
-        add(f'<rect x="{x0:.2f}" y="44.4" width="{STAGE_DX * 4:.2f}" height="65.6" fill="{BG_DARK}" opacity="0.55"/>')
+        add(f'<rect x="{x0:.2f}" y="44.4" width="{STAGE_DX * 4:.2f}" height="67.2" fill="{BG_DARK}" opacity="{SHADE_OPACITY}"/>')
 for i, x in enumerate(xs):
     add(text(str(i + 1), x, NUM_Y + 0.8, 2.3, FONT_BOLD, AMBER if i % 4 == 0 else INK))
 
-rows = [("PITCH", SLIDER_Y), ("PULSES", PULSE_Y), ("GATE", GATE_Y), ("SLIDE", SLIDE_Y), ("ACCUM", ACCUM_Y)]
+rows = [("PITCH", SLIDER_Y), ("PULSES", PULSE_Y), ("GATE", GATE_Y), ("SLIDE", SLIDE_Y), ("MUT", MUT_Y), ("SKIP", SKIP_Y)]
 for name, y in rows:
-    add(text(name, 2.2, y + 0.65, 1.75, FONT_BOLD, SOFT, anchor="start", spacing=0.04))
-add(text("1-8", 2.2, PULSE_Y + 2.9, 1.5, FONT_MED, SOFT, anchor="start"))
+    add(text(name, 2.2, y + 0.65, 2.1, FONT_BOLD, SOFT, anchor="start", spacing=0.04))
+add(text("1-8", 2.2, PULSE_Y + 2.9, 1.85, FONT_MED, SOFT, anchor="start"))
 
-# jacks
-for j, lab in enumerate(["CLOCK", "RESET", "RUN", "TRANSP", "ACC RST", "CTRL 1", "CTRL 2"]):
-    x = IN_X0 + IN_DX * j
-    add(text(lab, x, 112.5, 1.9, FONT_BOLD, CYAN if lab.startswith("CTRL") else INK, spacing=0.04))
-add(text("1 V/oct", IN_X0 + IN_DX * 3, 124.9, 1.45, FONT_MED, SOFT))
-add(text("CV in", IN_X0 + IN_DX * 5.5, 124.9, 1.45, FONT_MED, SOFT))
-
-add(f'<rect x="195.0" y="110.0" width="56.0" height="16.6" rx="1.2" fill="{OUTBOX}"/>')
-for x, lab in zip(OUT_X, ["CLK", "EOC", "GATE", "PITCH"]):
-    add(text(lab, x, 112.5, 1.9, FONT_BOLD, AMBER))
-
-# gate colour key
-kx = 106.0
-add(text("GATE", kx, 113.4, 1.8, FONT_BOLD, INK, anchor="start"))
+# gate colour key, in the title strip
+kx = 100.0
+add(text("GATE", kx, 8.7, 2.15, FONT_BOLD, INK, anchor="start"))
 key = [("#5A2020", "rest"), ("#3BD16F", "single"), ("#F2C23B", "multi"), ("#3B8BF2", "hold")]
 cx = kx + 9.0
 for col, lab in key:
-    add(f'<circle cx="{cx:.2f}" cy="112.75" r="1.1" fill="{col}"/>')
-    add(text(lab, cx + 1.8, 113.4, 1.6, FONT_MED, SOFT, anchor="start"))
-    cx += 4.0 + len(lab) * 1.05 + 2.4
+    add(f'<circle cx="{cx:.2f}" cy="8.05" r="1.1" fill="{col}"/>')
+    add(text(lab, cx + 1.8, 8.7, 1.95, FONT_MED, SOFT, anchor="start"))
+    cx += 4.0 + len(lab) * 1.3 + 2.4
 
-# a small skyline
-rnd = random.Random(7)
-x = 104.0
-while x < 191.0:
-    w = rnd.uniform(3.0, 7.0)
-    w = min(w, 191.0 - x)
-    h = rnd.uniform(3.0, 9.5)
-    y = 126.6 - h
-    add(f'<rect x="{x:.2f}" y="{y:.2f}" width="{w - 0.5:.2f}" height="{h:.2f}" fill="#262A31"/>')
-    wy = y + 1.0
-    while wy < 125.5:
-        wx = x + 0.7
-        while wx < x + w - 1.3:
-            if rnd.random() < 0.28:
-                add(f'<rect x="{wx:.2f}" y="{wy:.2f}" width="0.6" height="0.8" fill="{AMBER}" opacity="0.8"/>')
-            wx += 1.3
-        wy += 1.6
-    x += w
+# divider between the stages and the jack row
+line(4.0, 112.3, W - 4.0, 112.3, AMBER, 0.25, 'opacity="0.5"')
+
+# input jacks: label right above each jack, notes underneath
+for j, lab in enumerate(["CLOCK", "RESET", "RUN", "TRANSP", "SEED", "SNAP", "CTRL 1", "CTRL 2", "CTRL 3", "CTRL 4"]):
+    x = IN_X0 + IN_DX * j
+    add(text(lab, x, JACK_LABEL_Y, 1.9, FONT_BOLD, CYAN if lab.startswith("CTRL") else INK, spacing=0.04))
+add(text("1 V/oct", IN_X0 + IN_DX * 3, FOOT_Y, 1.8, FONT_MED, SOFT))
+add(text("trig", IN_X0 + IN_DX * 4, FOOT_Y, 1.8, FONT_MED, SOFT))
+add(text("0-7 V", IN_X0 + IN_DX * 5, FOOT_Y, 1.8, FONT_MED, SOFT))
+add(text("CTRL CV in", IN_X0 + IN_DX * 7.5, FOOT_Y, 1.8, FONT_MED, SOFT))
+
+# mutate and snapshots
+add(text("MUTATE", MUTATE_X, JACK_LABEL_Y - 0.6, 1.9, FONT_BOLD, CYAN, spacing=0.04))
+add(text("amount", MUTATE_X, FOOT_Y, 1.8, FONT_MED, SOFT))
+add(text("SEED", SEED_X, JACK_LABEL_Y, 1.9, FONT_BOLD, INK, spacing=0.04))
+add(text("new", SEED_X, FOOT_Y, 1.8, FONT_MED, SOFT))
+add(text("SAVE", SAVE_X, JACK_LABEL_Y, 1.9, FONT_BOLD, INK, spacing=0.04))
+for j in range(8):
+    add(text(str(j + 1), SNAP_X0 + SNAP_DX * j, JACK_LABEL_Y, 1.95, FONT_BOLD, AMBER if j == 0 else INK))
+add(text("SNAPSHOTS", SNAP_X0 + SNAP_DX * 3.5, FOOT_Y, 1.8, FONT_MED, SOFT, spacing=0.08))
+
+# outputs
+add(f'<rect x="197.6" y="113.2" width="45.8" height="14.6" rx="1.2" fill="{OUTBOX}"/>')
+for x, lab in zip(OUT_X, ["CLK", "EOC", "GATE", "PITCH"]):
+    add(text(lab, x, JACK_LABEL_Y, 1.9, FONT_BOLD, OUT_TEXT))
+add(text("OUT", OUT_X[0] + (OUT_X[3] - OUT_X[0]) / 2, FOOT_Y, 1.8, FONT_MED, SOFT, spacing=0.1))
+
+# --- wide pitch slider parts (keep sizes in step with WideSlider in src/Metroplex.cpp)
+SL_W, SL_H = 9.6, 26.0
+HD_W, HD_H = 8.4, 4.6
+ticks = []
+for i in range(9):
+    y = 1.0 + HD_H / 2 - 1.0 + i * (SL_H - HD_H) / 8
+    long = i % 4 == 0
+    ln = 1.8 if long else 1.1
+    ticks.append(f'<rect x="{0.2:.2f}" y="{y - 0.12:.2f}" width="{ln}" height="0.24" fill="{SOFT}"/>')
+    ticks.append(f'<rect x="{SL_W - 0.2 - ln:.2f}" y="{y - 0.12:.2f}" width="{ln}" height="0.24" fill="{SOFT}"/>')
+slider_svg = (
+    f'<svg xmlns="http://www.w3.org/2000/svg" width="{SL_W}mm" height="{SL_H}mm" viewBox="0 0 {SL_W} {SL_H}">\n'
+    f'<rect x="{SL_W / 2 - 0.9}" y="0.6" width="1.8" height="{SL_H - 1.2}" rx="0.9" fill="#0E0F12"/>\n'
+    + "\n".join(ticks) + "\n</svg>\n"
+)
+handle_svg = (
+    f'<svg xmlns="http://www.w3.org/2000/svg" width="{HD_W}mm" height="{HD_H}mm" viewBox="0 0 {HD_W} {HD_H}">\n'
+    f'<rect x="0" y="0" width="{HD_W}" height="{HD_H}" rx="0.9" fill="#26292E"/>\n'
+    f'<rect x="0.35" y="0.3" width="{HD_W - 0.7}" height="1.2" rx="0.5" fill="#3E424A"/>\n'
+    f'<rect x="0.6" y="{HD_H / 2 - 0.3}" width="{HD_W - 1.2}" height="0.6" fill="#E8E6E1"/>\n'
+    "</svg>\n"
+)
+if THEME == "white":
+    with open(os.path.join(HERE, "Slider.svg"), "w") as fh:
+        fh.write(slider_svg)
+    with open(os.path.join(HERE, "SliderHandle.svg"), "w") as fh:
+        fh.write(handle_svg)
 
 svg = (
     f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}mm" height="{H}mm" '
     f'viewBox="0 0 {W} {H}">\n' + "\n".join(parts) + "\n</svg>\n"
 )
-with open(os.path.join(HERE, "Metroplex.svg"), "w") as fh:
+name = "Metroplex.svg" if THEME == "white" else f"Metroplex-{THEME}.svg"
+with open(os.path.join(HERE, name), "w") as fh:
     fh.write(svg)
-print("wrote Metroplex.svg")
+print("wrote " + name)

@@ -1,7 +1,7 @@
 // Metroplex sequencer engine. This file has no VCV Rack code in it, so the
 // test program in test/ can run it on its own.
 //
-// The engine knows about stages, play orders, accumulators and scales.
+// The engine knows about stages, play orders, skips, slides and scales.
 // The Rack module (Metroplex.cpp) handles clocks, gate timing and slides,
 // and asks the engine what to play on each clock pulse.
 #pragma once
@@ -91,30 +91,24 @@ enum Order { ORDER_FORWARD, ORDER_REVERSE, ORDER_PENDULUM, ORDER_PINGPONG,
 static const char* const ORDER_NAMES[NUM_ORDERS] = {"Forward", "Reverse", "Pendulum", "Ping-pong",
 	"Converge", "Diverge", "Random", "Brownian"};
 
-enum SlideType { SLIDE_TEMPO, SLIDE_ANALOG, NUM_SLIDE_TYPES };
-static const char* const SLIDE_NAMES[NUM_SLIDE_TYPES] = {"Tempo", "Analog"};
-
-enum AccScope { ACC_STAGE, ACC_TRACK };
-static const char* const ACC_SCOPE_NAMES[2] = {"Stage", "Track"};
-enum AccTrigger { ACC_ON_STAGE, ACC_ON_PULSE };
-static const char* const ACC_TRIG_NAMES[2] = {"Stage", "Pulse"};
-enum AccMode { ACC_WRAP, ACC_PENDULUM, ACC_HOLD, NUM_ACC_MODES };
-static const char* const ACC_MODE_NAMES[NUM_ACC_MODES] = {"Wrap", "Pendulum", "Hold"};
-enum AccPolarity { ACC_UNIPOLAR, ACC_BIPOLAR };
-static const char* const ACC_POLAR_NAMES[2] = {"Unipolar", "Bipolar"};
+enum SlideType { SLIDE_TEMPO, SLIDE_ANALOG, SLIDE_ACID, NUM_SLIDE_TYPES };
+static const char* const SLIDE_NAMES[NUM_SLIDE_TYPES] = {"Tempo", "Analog", "Acid"};
 
 struct Stage {
 	float pitch = 0.f;  // slider, 0..1
 	int pulses = 1;     // 1..8
 	int gate = GATE_SINGLE;
 	bool slide = false;
-	bool accum = false;
+	bool skip = false;   // skipped stages are not played at all
+	bool mutable_ = true;  // MUT button: this stage may be changed by Mutate
+	int degreeOffset = 0;  // set by Mutate: scale degrees added to the slider's note
 };
 
 // Everything the engine needs for one pulse, after the CTRL knobs have had
 // their say.
 struct Settings {
 	int length = 16;          // 1..16 stages
+	int start = 0;            // first stage of the window, 0..15 (wraps past 16)
 	int order = ORDER_FORWARD;
 	int scale = 1;            // index into SCALES
 	int root = 0;             // 0..11
@@ -123,13 +117,7 @@ struct Settings {
 	float preSemis = 0.f;     // added before quantizing (CTRL + TRANSPOSE input)
 	int postSemis = 0;        // added after quantizing, chromatic
 	int pulseOffset = 0;      // added to every stage's pulse count
-	int accScope = ACC_STAGE;
-	int accTrigger = ACC_ON_STAGE;
-	int accMode = ACC_WRAP;
-	int accPolarity = ACC_UNIPOLAR;
-	int accStep = 1;          // scale degrees, -7..+7
-	int accLimit = 7;         // scale degrees, 1..16
-	int accDirection = 1;     // +1 forward, 0 frozen, -1 reverse (CTRL "Accum dir")
+	int slideType = SLIDE_TEMPO;
 };
 
 // What happens on one pulse.
@@ -141,68 +129,8 @@ struct PulseEvent {
 	bool gate = false;        // start a gate on this pulse
 	bool holdGate = false;    // the gate lasts the whole stage
 	bool slide = false;       // glide into this stage
+	bool tie = false;         // Acid: the gate runs on into the next stage (legato)
 	bool endOfCycle = false;  // first stage of a new cycle
-};
-
-// ---------------------------------------------------------------- accumulator
-
-struct Accumulator {
-	int value = 0;
-	int bounce = 1;  // pendulum direction
-
-	void reset() {
-		value = 0;
-		bounce = 1;
-	}
-
-	// Range is [lo, hi]. Unipolar counts away from zero in the direction of
-	// the programmed step; bipolar runs from -limit to +limit.
-	static void range(const Settings& s, int* lo, int* hi) {
-		int lim = std::max(1, s.accLimit);
-		if (s.accPolarity == ACC_BIPOLAR) {
-			*lo = -lim;
-			*hi = lim;
-		}
-		else if (s.accStep < 0) {
-			*lo = -lim;
-			*hi = 0;
-		}
-		else {
-			*lo = 0;
-			*hi = lim;
-		}
-	}
-
-	void advance(const Settings& s) {
-		int step = s.accStep * s.accDirection;
-		if (step == 0)
-			return;
-		int lo, hi;
-		range(s, &lo, &hi);
-		value = std::min(std::max(value, lo), hi);
-		if (s.accMode == ACC_WRAP) {
-			int size = hi - lo + 1;
-			value = lo + floorMod(value + step - lo, size);
-		}
-		else if (s.accMode == ACC_PENDULUM) {
-			int v = value + step * bounce;
-			// reflect off the ends (loop handles steps bigger than the range)
-			for (int guard = 0; guard < 8 && (v > hi || v < lo); guard++) {
-				if (v > hi) {
-					v = hi - (v - hi);
-					bounce = -bounce;
-				}
-				else if (v < lo) {
-					v = lo + (lo - v);
-					bounce = -bounce;
-				}
-			}
-			value = std::min(std::max(v, lo), hi);
-		}
-		else {
-			value = std::min(std::max(value + step, lo), hi);
-		}
-	}
 };
 
 // ---------------------------------------------------------------- engine
@@ -212,22 +140,17 @@ struct SeqEngine {
 	int pulseInStage = 0; // pulses already played in this stage
 	int stepCount = 0;    // stages played since reset (drives the orders)
 	int walk = 0;         // Brownian position
-	Accumulator stageAcc[NUM_STAGES];
-	Accumulator trackAcc;
+	bool allSkipped = false;
+	bool acidArmed = false;  // Acid: the stage just played had SLIDE on, so glide into the next
 	uint32_t rng = 0x12345678u;
 
 	void reset() {
 		stage = -1;
+		allSkipped = false;
+		acidArmed = false;
 		pulseInStage = 0;
 		stepCount = 0;
 		walk = 0;
-		resetAccumulators();
-	}
-
-	void resetAccumulators() {
-		for (int i = 0; i < NUM_STAGES; i++)
-			stageAcc[i].reset();
-		trackAcc.reset();
 	}
 
 	uint32_t random() {
@@ -268,7 +191,7 @@ struct SeqEngine {
 		*endOfCycle = (t == 0);
 		stepCount++;
 		if (s.order == ORDER_RANDOM)
-			return (int)(random() % (uint32_t)len);
+			return physical(s, (int)(random() % (uint32_t)len));
 		if (s.order == ORDER_BROWNIAN) {
 			if (stepCount > 1) {
 				int r = (int)(random() % 4u);  // back, stay, forward, forward
@@ -278,17 +201,49 @@ struct SeqEngine {
 				walk = 0;
 			}
 			walk = floorMod(walk, len);
-			return walk;
+			return physical(s, walk);
 		}
-		return orderedStage(s.order, len, t);
+		return physical(s, orderedStage(s.order, len, t));
+	}
+
+	// Position j in the window (0 = the start stage) to a stage number.
+	static int physical(const Settings& s, int j) {
+		return floorMod(s.start + j, NUM_STAGES);
+	}
+
+	// Is stage i inside the playing window (start .. start + length - 1)?
+	static bool inWindow(const Settings& s, int i) {
+		int len = std::min(std::max(s.length, 1), NUM_STAGES);
+		return floorMod(i - s.start, NUM_STAGES) < len;
+	}
+
+	// Next stage that is not skipped. If every stage in the length is
+	// skipped, *allSkipped is set and the sequence keeps moving in silence.
+	int nextPlayable(const Stage* stages, const Settings& s, bool* endOfCycle, bool* allSkipped) {
+		int len = std::min(std::max(s.length, 1), NUM_STAGES);
+		*endOfCycle = false;
+		*allSkipped = true;
+		for (int i = 0; i < len; i++)
+			if (!stages[physical(s, i)].skip)
+				*allSkipped = false;
+		if (*allSkipped)
+			return nextStage(s, endOfCycle);
+		int tries = 4 * cycleLength(s.order, len) + 64;
+		for (int k = 0; k < tries; k++) {
+			bool e = false;
+			int c = nextStage(s, &e);
+			*endOfCycle = *endOfCycle || e;
+			if (!stages[c].skip)
+				return c;
+		}
+		for (int i = 0; i < len; i++)
+			if (!stages[physical(s, i)].skip)
+				return physical(s, i);
+		return physical(s, 0);
 	}
 
 	static int effectivePulses(const Stage& st, const Settings& s) {
 		return std::min(std::max(st.pulses + s.pulseOffset, 1), 8);
-	}
-
-	Accumulator& accFor(int i, const Settings& s) {
-		return (s.accScope == ACC_TRACK) ? trackAcc : stageAcc[i];
 	}
 
 	// Called once per (divided) clock pulse.
@@ -300,53 +255,58 @@ struct SeqEngine {
 			if (pulseInStage >= pulses)
 				advance = true;
 		}
+		bool silent = false;
 		if (advance) {
-			stage = nextStage(s, &ev.endOfCycle);
+			stage = nextPlayable(stages, s, &ev.endOfCycle, &silent);
 			pulseInStage = 0;
 			ev.newStage = true;
+			allSkipped = silent;
 		}
+		silent = allSkipped;
 		const Stage& st = stages[stage];
 		ev.stage = stage;
 		ev.pulseIndex = pulseInStage;
 		ev.stagePulses = effectivePulses(st, s);
-		ev.slide = ev.newStage && st.slide;
-		switch (st.gate) {
+		bool acid = (s.slideType == SLIDE_ACID);
+		int gate = st.gate;
+		if (acid) {
+			// Acid: a SLIDE stage glides *out* into the next played stage, and
+			// holds its gate across all its pulses, tied into the next note.
+			if (ev.newStage) {
+				ev.slide = acidArmed;
+				acidArmed = st.slide && !silent;
+			}
+			if (st.slide) {
+				gate = GATE_HOLD;
+				ev.tie = true;
+			}
+		}
+		else {
+			ev.slide = ev.newStage && st.slide;
+			acidArmed = false;
+		}
+		switch (gate) {
 			case GATE_SINGLE: ev.gate = (pulseInStage == 0); break;
 			case GATE_MULTI: ev.gate = true; break;
 			case GATE_HOLD: ev.gate = (pulseInStage == 0); ev.holdGate = true; break;
 			default: break;
 		}
+		if (silent) {
+			ev.gate = false;
+			ev.holdGate = false;
+			ev.slide = false;
+			ev.tie = false;
+		}
 		pulseInStage++;
 		return ev;
 	}
 
-	// Run after the pulse has been played, so the first pass through a stage
-	// plays the programmed note and later passes move away from it.
-	void accumulate(const PulseEvent& ev, const Stage* stages, const Settings& s) {
-		const Stage& st = stages[ev.stage];
-		if (!st.accum)
-			return;
-		if (s.accTrigger == ACC_ON_STAGE && !ev.newStage)
-			return;
-		accFor(ev.stage, s).advance(s);
-	}
-
-	int accOffset(int i, const Settings& s) const {
-		return (s.accScope == ACC_TRACK) ? trackAcc.value : stageAcc[i].value;
-	}
-
-	// Semitones above the root for stage i (before octave and root).
-	int stageSemis(const Stage& st, int i, const Settings& s) const {
-		return stageSemisAcc(st, accOffset(i, s), s);
-	}
-
-	// Same, with the accumulator offset given (the module holds on to the
-	// offset that was current when the pulse played).
-	static int stageSemisAcc(const Stage& st, int acc, const Settings& s) {
+	// Semitones above the root (before octave and root).
+	static int stageSemis(const Stage& st, const Settings& s) {
 		const Scale& sc = SCALES[std::min(std::max(s.scale, 0), NUM_SCALES - 1)];
 		int steps = std::max(1, s.range) * sc.count;
 		int degree = (int)std::lround(std::min(std::max(st.pitch, 0.f), 1.f) * steps);
-		degree += acc;
+		degree += st.degreeOffset;
 		int semis = degreeToSemis(sc, degree);
 		if (s.preSemis != 0.f)
 			semis = quantizeSemis(sc, semis + s.preSemis);
@@ -354,13 +314,19 @@ struct SeqEngine {
 	}
 
 	// Pitch output in volts (1 V/oct, 0 V = C4).
-	float stageVolts(const Stage& st, int i, const Settings& s) const {
-		return stageVoltsAcc(st, accOffset(i, s), s);
+	static float stageVolts(const Stage& st, const Settings& s) {
+		int semis = stageSemis(st, s) + floorMod(s.root, 12);
+		return semis / 12.f + s.octave;
 	}
 
-	static float stageVoltsAcc(const Stage& st, int acc, const Settings& s) {
-		int semis = stageSemisAcc(st, acc, s) + floorMod(s.root, 12);
-		return semis / 12.f + s.octave;
+	// Will the next pulse begin a new cycle? (Snapshots switch here.)
+	bool nextPulseStartsCycle(const Stage* stages, const Settings& s) const {
+		if (stage < 0)
+			return true;
+		if (pulseInStage < effectivePulses(stages[stage], s))
+			return false;
+		int len = std::min(std::max(s.length, 1), NUM_STAGES);
+		return stepCount % cycleLength(s.order, len) == 0;
 	}
 };
 

@@ -1,6 +1,7 @@
 // Tests for the Metroplex engine. Builds without VCV Rack:
 //   c++ -std=c++11 -O2 -o test/engine_test test/engine_test.cpp && test/engine_test
 #include "../src/Program.hpp"
+#include "../src/Mutate.hpp"
 #include <cstdio>
 #include <vector>
 
@@ -80,91 +81,6 @@ static void testPulsesAndGates() {
 	CHECK(SeqEngine::effectivePulses(st[0], s) == 1);
 }
 
-static std::vector<int> accRun(int mode, int polar, int step, int limit, int n) {
-	Settings s;
-	s.accMode = mode;
-	s.accPolarity = polar;
-	s.accStep = step;
-	s.accLimit = limit;
-	Accumulator a;
-	std::vector<int> out;
-	for (int i = 0; i < n; i++) {
-		a.advance(s);
-		out.push_back(a.value);
-	}
-	return out;
-}
-
-static void testAccumulator() {
-	CHECK((accRun(ACC_WRAP, ACC_UNIPOLAR, 1, 3, 6) == std::vector<int>{1, 2, 3, 0, 1, 2}));
-	CHECK((accRun(ACC_WRAP, ACC_UNIPOLAR, 2, 3, 4) == std::vector<int>{2, 0, 2, 0}));
-	CHECK((accRun(ACC_WRAP, ACC_UNIPOLAR, -1, 2, 4) == std::vector<int>{-1, -2, 0, -1}));
-	CHECK((accRun(ACC_WRAP, ACC_BIPOLAR, 1, 2, 6) == std::vector<int>{1, 2, -2, -1, 0, 1}));
-	CHECK((accRun(ACC_PENDULUM, ACC_UNIPOLAR, 1, 2, 7) == std::vector<int>{1, 2, 1, 0, 1, 2, 1}));
-	CHECK((accRun(ACC_PENDULUM, ACC_BIPOLAR, 2, 3, 6) == std::vector<int>{2, 2, 0, -2, -2, 0}));
-	CHECK((accRun(ACC_HOLD, ACC_UNIPOLAR, 3, 7, 4) == std::vector<int>{3, 6, 7, 7}));
-	// frozen
-	Settings s;
-	s.accDirection = 0;
-	Accumulator a;
-	a.advance(s);
-	CHECK(a.value == 0);
-	// reverse direction
-	s.accDirection = -1;
-	s.accPolarity = ACC_BIPOLAR;
-	a.advance(s);
-	CHECK(a.value == -1);
-	// large steps stay in range
-	for (int m = 0; m < NUM_ACC_MODES; m++)
-		for (int p = 0; p < 2; p++)
-			for (int st = -7; st <= 7; st++)
-				for (int lim = 1; lim <= 16; lim++)
-					for (int x : accRun(m, p, st, lim, 50))
-						CHECK(x >= -lim && x <= lim);
-}
-
-static void testAccumulateInSequence() {
-	SeqEngine e;
-	Stage st[NUM_STAGES];
-	Settings s;
-	s.length = 2;
-	s.scale = 1;  // major
-	s.range = 1;
-	st[0].accum = true;
-	st[0].pitch = 0.f;
-	// pass 1 plays the programmed note, then accumulates
-	PulseEvent ev = e.pulse(st, s);
-	CHECK(e.stageSemis(st[0], 0, s) == 0);
-	e.accumulate(ev, st, s);
-	CHECK(e.stageSemis(st[0], 0, s) == 2);  // one degree up in major = D
-	ev = e.pulse(st, s);
-	e.accumulate(ev, st, s);  // stage 1 has accum off
-	CHECK(e.stageSemis(st[1], 1, s) == 0);
-	// pulse trigger on a 3-pulse stage moves three times per pass
-	SeqEngine e2;
-	s.accTrigger = ACC_ON_PULSE;
-	st[0].pulses = 3;
-	for (int i = 0; i < 3; i++) {
-		ev = e2.pulse(st, s);
-		e2.accumulate(ev, st, s);
-	}
-	CHECK(e2.stageAcc[0].value == 3);
-	// track scope shares one counter across stages
-	SeqEngine e3;
-	s.accScope = ACC_TRACK;
-	s.accTrigger = ACC_ON_STAGE;
-	st[0].pulses = 1;
-	st[1].accum = true;
-	for (int i = 0; i < 4; i++) {
-		ev = e3.pulse(st, s);
-		e3.accumulate(ev, st, s);
-	}
-	CHECK(e3.trackAcc.value == 4);
-	CHECK(e3.accOffset(5, s) == 4);
-	e3.reset();
-	CHECK(e3.trackAcc.value == 0 && e3.stage == -1);
-}
-
 static void testScales() {
 	const Scale& maj = SCALES[1];
 	CHECK(degreeToSemis(maj, 0) == 0);
@@ -188,10 +104,10 @@ static void testScales() {
 	Settings s;
 	s.range = 2;
 	st.pitch = 1.f;
-	CHECK(e.stageSemis(st, 0, s) == 24);
+	CHECK(SeqEngine::stageSemis(st, s) == 24);
 	s.root = 9;  // A
 	s.octave = -1;
-	CHECK(std::fabs(e.stageVolts(st, 0, s) - (33.f / 12.f - 1.f)) < 1e-5f);
+	CHECK(std::fabs(SeqEngine::stageVolts(st, s) - (33.f / 12.f - 1.f)) < 1e-5f);
 	char buf[8];
 	noteName(0.f, buf, sizeof buf);
 	CHECK(std::string(buf) == "C4");
@@ -221,14 +137,14 @@ static void testCtrl() {
 	amt[0] = 1.f; amt[1] = 1.f;
 	computeEffective(prog, dest, amt, 0.f, &ef);
 	CHECK(ef.eng.pulseOffset == 14);
-	// direction dead zone
-	dest[0] = DEST_ACC_DIR; dest[1] = DEST_NONE;
-	amt[0] = 0.5f;
+	// mutate amount offset and snapshot select
+	dest[0] = DEST_MUT_AMOUNT; dest[1] = DEST_SNAPSHOT;
+	amt[0] = 0.75f; amt[1] = 1.f;
 	computeEffective(prog, dest, amt, 0.f, &ef);
-	CHECK(ef.eng.accDirection == 0);
-	amt[0] = 0.2f;
+	CHECK(std::fabs(ef.mutateOffset - 0.5f) < 1e-5f && ef.snapshot == 7);
+	amt[1] = 0.f;
 	computeEffective(prog, dest, amt, 0.f, &ef);
-	CHECK(ef.eng.accDirection == -1);
+	CHECK(ef.snapshot == 0);
 	// transpose input goes in before the scale
 	dest[0] = DEST_NONE;
 	computeEffective(prog, dest, amt, 1.f / 12.f, &ef);
@@ -247,11 +163,186 @@ static void testCtrl() {
 			CHECK(!fieldText(f, v).empty());
 }
 
+static void testSkip() {
+	Stage st[NUM_STAGES];
+	Settings s;
+	s.length = 5;
+	st[1].skip = true;
+	st[3].skip = true;
+	SeqEngine e;
+	std::vector<int> v;
+	bool eoc[6];
+	for (int i = 0; i < 6; i++) {
+		PulseEvent ev = e.pulse(st, s);
+		v.push_back(ev.stage);
+		eoc[i] = ev.endOfCycle;
+	}
+	CHECK((v == std::vector<int>{0, 2, 4, 0, 2, 4}));
+	CHECK(eoc[0] && !eoc[1] && eoc[3]);
+	// skipping the first stage still marks the new cycle
+	st[0].skip = true;
+	SeqEngine e2;
+	CHECK(e2.pulse(st, s).stage == 2);
+	CHECK(e2.pulse(st, s).stage == 4);
+	PulseEvent ev = e2.pulse(st, s);
+	CHECK(ev.stage == 2 && ev.endOfCycle);
+	// every order only plays unskipped stages
+	for (int o = 0; o < NUM_ORDERS; o++) {
+		s.order = o;
+		SeqEngine e3;
+		for (int i = 0; i < 200; i++) {
+			int x = e3.pulse(st, s).stage;
+			CHECK(x == 2 || x == 4);
+		}
+	}
+	// all skipped: keeps running with no gates
+	for (int i = 0; i < NUM_STAGES; i++) st[i].skip = true;
+	s.order = ORDER_FORWARD;
+	SeqEngine e4;
+	for (int i = 0; i < 10; i++) {
+		PulseEvent p = e4.pulse(st, s);
+		CHECK(!p.gate && p.stage >= 0 && p.stage < 5);
+	}
+}
+
+static void testAcid() {
+	Stage st[NUM_STAGES];
+	Settings s;
+	s.length = 3;
+	s.slideType = SLIDE_ACID;
+	st[0].slide = true;
+	st[0].pulses = 2;
+	st[0].gate = GATE_REST;   // Acid turns a slide stage into a tied Hold
+	SeqEngine e;
+	PulseEvent a = e.pulse(st, s);
+	CHECK(a.stage == 0 && a.gate && a.holdGate && a.tie && !a.slide);
+	PulseEvent b = e.pulse(st, s);
+	CHECK(b.stage == 0 && !b.gate);
+	PulseEvent c = e.pulse(st, s);
+	CHECK(c.stage == 1 && c.slide && !c.tie);  // glides out of stage 1 into stage 2
+	PulseEvent d = e.pulse(st, s);
+	CHECK(d.stage == 2 && !d.slide);
+	// Tempo mode: slides into the marked stage instead
+	s.slideType = SLIDE_TEMPO;
+	SeqEngine e2;
+	PulseEvent x = e2.pulse(st, s);
+	CHECK(x.slide && !x.tie && !x.gate);
+}
+
+static void testStart() {
+	Stage st[NUM_STAGES];
+	Settings s;
+	s.length = 4;
+	s.start = 14;
+	SeqEngine e;
+	std::vector<int> v;
+	for (int i = 0; i < 5; i++) v.push_back(e.pulse(st, s).stage);
+	CHECK((v == std::vector<int>{14, 15, 0, 1, 14}));
+	CHECK(SeqEngine::inWindow(s, 15) && SeqEngine::inWindow(s, 1) && !SeqEngine::inWindow(s, 2) && !SeqEngine::inWindow(s, 13));
+	s.order = ORDER_REVERSE;
+	SeqEngine e2;
+	CHECK(e2.pulse(st, s).stage == 1);
+	// start stage set from the menu field (1-based)
+	int prog[NUM_FIELDS];
+	for (int f = 0; f < NUM_FIELDS; f++) prog[f] = FIELDS[f].def;
+	prog[F_START] = 5;
+	int dest[4] = {DEST_NONE, DEST_NONE, DEST_NONE, DEST_START};
+	float amt[4] = {0.5f, 0.5f, 0.5f, 1.f};
+	Effective ef;
+	computeEffective(prog, dest, amt, 0.f, &ef, 2);
+	CHECK(ef.eng.start == 4);
+	computeEffective(prog, dest, amt, 0.f, &ef, 4);
+	CHECK(ef.eng.start == 15 && ef.owner[F_START] == 4);
+}
+
+static bool sameStage(const Stage& a, const Stage& b) {
+	return a.pitch == b.pitch && a.pulses == b.pulses && a.gate == b.gate && a.slide == b.slide &&
+		a.skip == b.skip && a.degreeOffset == b.degreeOffset;
+}
+
+static void testMutate() {
+	Stage base[NUM_STAGES];
+	for (int i = 0; i < NUM_STAGES; i++) {
+		base[i].pitch = i / 16.f;
+		base[i].pulses = 1 + i % 3;
+		base[i].gate = GATE_SINGLE;
+	}
+	MutateSettings m;
+	m.slides = true;
+	m.skips = true;
+	// amount 0 = exactly as programmed
+	for (int i = 0; i < NUM_STAGES; i++)
+		CHECK(sameStage(mutateStage(base[i], i, 1234, m), base[i]));
+	// more amount = never fewer changed stages, and the same seed gives the same result
+	int prev = 0;
+	for (float a = 0.f; a <= 1.0001f; a += 0.05f) {
+		m.amount = a;
+		int changed = 0;
+		for (int i = 0; i < NUM_STAGES; i++) {
+			Stage x = mutateStage(base[i], i, 1234, m);
+			Stage y = mutateStage(base[i], i, 1234, m);
+			CHECK(sameStage(x, y));
+			CHECK(x.pulses >= 1 && x.pulses <= 8 && x.gate >= 0 && x.gate < NUM_GATE_TYPES);
+			CHECK(std::abs(x.degreeOffset) <= m.pitchRange);
+			if (!sameStage(x, base[i])) changed++;
+		}
+		CHECK(changed >= prev);
+		prev = changed;
+	}
+	CHECK(prev == NUM_STAGES);  // fully mutated: every stage changed
+	// back to 0 = back to the original
+	m.amount = 0.f;
+	for (int i = 0; i < NUM_STAGES; i++)
+		CHECK(sameStage(mutateStage(base[i], i, 1234, m), base[i]));
+	// locked stages never change
+	m.amount = 1.f;
+	Stage locked = base[3];
+	locked.mutable_ = false;
+	CHECK(sameStage(mutateStage(locked, 3, 1234, m), locked));
+	// a different seed gives a different pattern
+	int diff = 0;
+	for (int i = 0; i < NUM_STAGES; i++)
+		if (!sameStage(mutateStage(base[i], i, 1234, m), mutateStage(base[i], i, 98765, m))) diff++;
+	CHECK(diff > 4);
+	// pitch off, rhythm off: nothing changes
+	m.pitchRange = 0;
+	m.rhythm = m.slides = m.skips = false;
+	for (int i = 0; i < NUM_STAGES; i++)
+		CHECK(sameStage(mutateStage(base[i], i, 1234, m), base[i]));
+	// pitch offset reaches the note
+	Settings s;
+	Stage st;
+	st.pitch = 0.f;
+	st.degreeOffset = 2;
+	CHECK(SeqEngine::stageSemis(st, s) == 4);  // major: two degrees up = E
+	CHECK(nextSeed(5, 1) != 5 && nextSeed(5, 1) == nextSeed(5, 1));
+}
+
+static void testSnapshotBoundary() {
+	Stage st[NUM_STAGES];
+	Settings s;
+	s.length = 3;
+	st[1].pulses = 2;
+	SeqEngine e;
+	CHECK(e.nextPulseStartsCycle(st, s));
+	e.pulse(st, s);                        // stage 1
+	CHECK(!e.nextPulseStartsCycle(st, s));
+	e.pulse(st, s);                        // stage 2, pulse 1
+	CHECK(!e.nextPulseStartsCycle(st, s));
+	e.pulse(st, s);                        // stage 2, pulse 2
+	CHECK(!e.nextPulseStartsCycle(st, s));
+	e.pulse(st, s);                        // stage 3
+	CHECK(e.nextPulseStartsCycle(st, s));
+}
+
 int main() {
+	testMutate();
+	testSnapshotBoundary();
+	testStart();
+	testAcid();
+	testSkip();
 	testOrders();
 	testPulsesAndGates();
-	testAccumulator();
-	testAccumulateInSequence();
 	testScales();
 	testCtrl();
 	if (failures) {
