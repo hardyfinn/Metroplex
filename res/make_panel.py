@@ -13,7 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FONT_BOLD = os.environ.get("PANEL_FONT_BOLD", "/usr/share/fonts/opentype/inter/Inter-Bold.otf")
 FONT_MED = os.environ.get("PANEL_FONT_MED", "/usr/share/fonts/opentype/inter/Inter-Medium.otf")
 
-W, H = 254.0, 128.5  # 50 HP
+W, H = 294.64, 128.5  # 58 HP
 
 import sys
 
@@ -30,21 +30,21 @@ globals().update(THEMES[THEME])
 
 # --- keep in step with src/Layout.hpp
 DISP_X, DISP_Y, DISP_W, DISP_H = 6.0, 12.0, 64.0, 28.0
-PAGE_X = [80.0, 94.0, 108.0]
+PAGE_X = [82.0, 98.0, 114.0]
 PAGE_Y = [21.0, 35.0]
-ENC_X, ENC_Y = 127.0, 27.0
-CTRL_X = [149.0, 171.0, 193.0, 215.0]
+ENC_X, ENC_Y = 137.0, 27.0
+CTRL_X = [162.0, 188.0, 214.0, 240.0]
 CTRL_Y, CTRL_BTN_Y = 24.0, 36.5
 CTRL_BTN_DX, CTRL_ATT_DX = -5.5, 5.5  # menu button left, CV attenuator right, under each knob
-RUN_X, RUN_Y, CLK_LIGHT_Y = 232.0, 21.0, 33.0
-ALL_PULSES_X, ALL_PULSES_Y = 245.5, 24.0
-STAGE_X0, STAGE_DX = 17.5, 14.6
+RUN_X, RUN_Y, CLK_LIGHT_Y = 262.0, 21.0, 32.0
+ALL_PULSES_X, ALL_PULSES_Y = 280.0, 24.0
+STAGE_X0, STAGE_DX = 20.5, 17.6
 NUM_Y, SLIDER_Y, PULSE_Y, GATE_Y, SLIDE_Y, MUT_Y, SKIP_Y = 46.4, 61.5, 79.5, 87.0, 94.0, 101.0, 108.0
 JACK_Y = 120.2
-IN_X0, IN_DX = 12.0, 10.8  # 10 inputs
-OUT_X = [203.0, 214.5, 226.0, 237.5]
-MUTATE_X, SEED_X, SAVE_X, SNAP_X0, SNAP_DX = 120.0, 130.0, 137.5, 145.0, 6.8
-JACK_LABEL_Y = 115.0  # just above the jacks, so each label sits with its own jack
+IN_X0, IN_DX = 12.0, 13.0  # 10 inputs
+OUT_X = [240.0, 252.0, 264.0, 276.0]
+MUTATE_X, SEED_X, SAVE_X, SNAP_X0, SNAP_DX = 145.0, 157.0, 168.0, 178.0, 7.2
+JACK_LABEL_Y = 115.3  # just above the jacks, so each label sits with its own jack
 FOOT_Y = 126.9
 
 fonts = {}
@@ -87,7 +87,7 @@ add(f'<rect width="{W}" height="{H}" fill="{BG}"/>')
 
 # title strip
 add(text("METROPLEX", 6.0, 9.0, 4.2, FONT_BOLD, AMBER, anchor="start", spacing=0.14))
-add(text("16-stage pulse sequencer", 50.0, 8.7, 2.1, FONT_MED, SOFT, anchor="start"))
+add(text("16-stage pulse sequencer", 50.0, 8.7, 2.6, FONT_MED, SOFT, anchor="start"))
 add(text("Haer", W - 6.0, 8.8, 2.6, FONT_BOLD, INK, anchor="end", spacing=0.08))
 
 # display window
@@ -98,35 +98,35 @@ add(f'<rect x="{DISP_X}" y="{DISP_Y}" width="{DISP_W}" height="{DISP_H}" rx="1.2
 page_names = [["HOME", "CLOCK", "SEQ"], ["SCALE", "SLIDE", "MUTATE"]]
 for r in range(2):
     for c in range(3):
-        add(text(page_names[r][c], PAGE_X[c], PAGE_Y[r] - 4.4, 2.0, FONT_BOLD, INK, spacing=0.06))
-add(text("press again = next row", PAGE_X[1], 41.0, 1.85, FONT_MED, SOFT))
+        add(text(page_names[r][c], PAGE_X[c], PAGE_Y[r] - 4.4, 2.9, FONT_BOLD, INK, spacing=0.06))
+add(text("press again = next row", PAGE_X[1], 41.6, 2.2, FONT_MED, SOFT))
 
 # data encoder
-add(text("DATA", ENC_X, 18.2, 2.3, FONT_BOLD, AMBER, spacing=0.1))
+add(text("DATA", ENC_X, 18.4, 3.2, FONT_BOLD, AMBER, spacing=0.1))
 add(f'<circle cx="{ENC_X}" cy="{ENC_Y}" r="8.2" fill="none" stroke="{BG_DARK}" stroke-width="0.8"/>')
-add(text("drag: change", ENC_X, 38.0, 1.85, FONT_MED, SOFT))
-add(text("click: next row", ENC_X, 40.1, 1.85, FONT_MED, SOFT))
+add(text("drag: change", ENC_X, 37.6, 2.1, FONT_MED, SOFT))
+add(text("click: next row", ENC_X, 40.4, 2.1, FONT_MED, SOFT))
 
 # CTRL knobs
 for k in range(4):
     x = CTRL_X[k]
-    add(text(f"CTRL {k + 1}", x, 15.6, 2.3, FONT_BOLD, CYAN, spacing=0.08))
-    add(text("menu", x + CTRL_BTN_DX, 41.6, 1.85, FONT_MED, SOFT))
-    add(text("CV amt", x + CTRL_ATT_DX, 41.6, 1.85, FONT_MED, SOFT))
+    add(text(f"CTRL {k + 1}", x, 15.6, 3.2, FONT_BOLD, CYAN, spacing=0.08))
+    add(text("menu", x + CTRL_BTN_DX, 42.3, 2.2, FONT_MED, SOFT))
+    add(text("CV amt", x + CTRL_ATT_DX, 42.3, 2.2, FONT_MED, SOFT))
     add(text("-", x + CTRL_ATT_DX - 4.4, CTRL_BTN_Y + 0.8, 2.2, FONT_BOLD, SOFT))
     add(text("+", x + CTRL_ATT_DX + 4.4, CTRL_BTN_Y + 0.8, 2.2, FONT_BOLD, SOFT))
 
 # run and clock
-add(text("RUN", RUN_X, 15.6, 2.3, FONT_BOLD, INK, spacing=0.08))
-add(text("CLK", RUN_X, CLK_LIGHT_Y + 4.6, 2.15, FONT_BOLD, SOFT))
+add(text("RUN", RUN_X, 15.6, 3.2, FONT_BOLD, INK, spacing=0.08))
+add(text("CLK", RUN_X, CLK_LIGHT_Y + 5.0, 2.9, FONT_BOLD, SOFT))
 
 # master pulses knob
-add(text("PULSES", ALL_PULSES_X, 15.6, 2.0, FONT_BOLD, INK, spacing=0.06))
-add(text("all stages", ALL_PULSES_X, 31.4, 1.85, FONT_MED, SOFT))
+add(text("PULSES", ALL_PULSES_X, 15.6, 3.2, FONT_BOLD, INK, spacing=0.06))
+add(text("all stages", ALL_PULSES_X, 32.2, 2.2, FONT_MED, SOFT))
 for n, v in ((1, 0.0), (8, 1.0)):
     import math
     a = math.radians(-150 + 300 * v)
-    add(text(str(n), ALL_PULSES_X + 5.6 * math.sin(a), ALL_PULSES_Y - 5.6 * math.cos(a) + 0.6, 1.85, FONT_MED, SOFT))
+    add(text(str(n), ALL_PULSES_X + 5.9 * math.sin(a), ALL_PULSES_Y - 5.9 * math.cos(a) + 0.8, 2.4, FONT_MED, SOFT))
 
 # divider
 line(4.0, 43.6, W - 4.0, 43.6, AMBER, 0.25, 'opacity="0.5"')
@@ -138,22 +138,22 @@ for g in range(4):
         x0 = xs[g * 4] - STAGE_DX / 2
         add(f'<rect x="{x0:.2f}" y="44.4" width="{STAGE_DX * 4:.2f}" height="67.2" fill="{BG_DARK}" opacity="{SHADE_OPACITY}"/>')
 for i, x in enumerate(xs):
-    add(text(str(i + 1), x, NUM_Y + 0.8, 2.3, FONT_BOLD, AMBER if i % 4 == 0 else INK))
+    add(text(str(i + 1), x, NUM_Y + 1.1, 3.2, FONT_BOLD, AMBER if i % 4 == 0 else INK))
 
 rows = [("PITCH", SLIDER_Y), ("PULSES", PULSE_Y), ("GATE", GATE_Y), ("SLIDE", SLIDE_Y), ("MUT", MUT_Y), ("SKIP", SKIP_Y)]
 for name, y in rows:
-    add(text(name, 2.2, y + 0.65, 2.1, FONT_BOLD, SOFT, anchor="start", spacing=0.04))
-add(text("1-8", 2.2, PULSE_Y + 2.9, 1.85, FONT_MED, SOFT, anchor="start"))
+    add(text(name, 2.2, y + 1.0, 2.9, FONT_BOLD, SOFT, anchor="start", spacing=0.04))
+add(text("1-8", 2.2, PULSE_Y + 3.6, 2.2, FONT_MED, SOFT, anchor="start"))
 
 # gate colour key, in the title strip
 kx = 100.0
-add(text("GATE", kx, 8.7, 2.15, FONT_BOLD, INK, anchor="start"))
+add(text("GATE", kx, 8.7, 2.6, FONT_BOLD, INK, anchor="start"))
 key = [("#5A2020", "rest"), ("#3BD16F", "single"), ("#F2C23B", "multi"), ("#3B8BF2", "hold")]
-cx = kx + 9.0
+cx = kx + 10.5
 for col, lab in key:
     add(f'<circle cx="{cx:.2f}" cy="8.05" r="1.1" fill="{col}"/>')
-    add(text(lab, cx + 1.8, 8.7, 1.95, FONT_MED, SOFT, anchor="start"))
-    cx += 4.0 + len(lab) * 1.3 + 2.4
+    add(text(lab, cx + 1.8, 8.7, 2.4, FONT_MED, SOFT, anchor="start"))
+    cx += 4.0 + len(lab) * 1.55 + 2.4
 
 # divider between the stages and the jack row
 line(4.0, 112.3, W - 4.0, 112.3, AMBER, 0.25, 'opacity="0.5"')
@@ -161,27 +161,27 @@ line(4.0, 112.3, W - 4.0, 112.3, AMBER, 0.25, 'opacity="0.5"')
 # input jacks: label right above each jack, notes underneath
 for j, lab in enumerate(["CLOCK", "RESET", "RUN", "TRANSP", "SEED", "SNAP", "CTRL 1", "CTRL 2", "CTRL 3", "CTRL 4"]):
     x = IN_X0 + IN_DX * j
-    add(text(lab, x, JACK_LABEL_Y, 1.9, FONT_BOLD, CYAN if lab.startswith("CTRL") else INK, spacing=0.04))
-add(text("1 V/oct", IN_X0 + IN_DX * 3, FOOT_Y, 1.8, FONT_MED, SOFT))
-add(text("trig", IN_X0 + IN_DX * 4, FOOT_Y, 1.8, FONT_MED, SOFT))
-add(text("0-7 V", IN_X0 + IN_DX * 5, FOOT_Y, 1.8, FONT_MED, SOFT))
-add(text("CTRL CV in", IN_X0 + IN_DX * 7.5, FOOT_Y, 1.8, FONT_MED, SOFT))
+    add(text(lab, x, JACK_LABEL_Y, 2.9, FONT_BOLD, CYAN if lab.startswith("CTRL") else INK, spacing=0.04))
+add(text("1 V/oct", IN_X0 + IN_DX * 3, FOOT_Y, 2.1, FONT_MED, SOFT))
+add(text("trig", IN_X0 + IN_DX * 4, FOOT_Y, 2.1, FONT_MED, SOFT))
+add(text("0-7 V", IN_X0 + IN_DX * 5, FOOT_Y, 2.1, FONT_MED, SOFT))
+add(text("CTRL CV in", IN_X0 + IN_DX * 7.5, FOOT_Y, 2.1, FONT_MED, SOFT))
 
 # mutate and snapshots
-add(text("MUTATE", MUTATE_X, JACK_LABEL_Y - 0.6, 1.9, FONT_BOLD, CYAN, spacing=0.04))
-add(text("amount", MUTATE_X, FOOT_Y, 1.8, FONT_MED, SOFT))
-add(text("SEED", SEED_X, JACK_LABEL_Y, 1.9, FONT_BOLD, INK, spacing=0.04))
-add(text("new", SEED_X, FOOT_Y, 1.8, FONT_MED, SOFT))
-add(text("SAVE", SAVE_X, JACK_LABEL_Y, 1.9, FONT_BOLD, INK, spacing=0.04))
+add(text("MUTATE", MUTATE_X, JACK_LABEL_Y - 0.6, 2.9, FONT_BOLD, CYAN, spacing=0.04))
+add(text("amount", MUTATE_X, FOOT_Y, 2.1, FONT_MED, SOFT))
+add(text("SEED", SEED_X, JACK_LABEL_Y, 2.9, FONT_BOLD, INK, spacing=0.04))
+add(text("new", SEED_X, FOOT_Y, 2.1, FONT_MED, SOFT))
+add(text("SAVE", SAVE_X, JACK_LABEL_Y, 2.9, FONT_BOLD, INK, spacing=0.04))
 for j in range(8):
-    add(text(str(j + 1), SNAP_X0 + SNAP_DX * j, JACK_LABEL_Y, 1.95, FONT_BOLD, AMBER if j == 0 else INK))
-add(text("SNAPSHOTS", SNAP_X0 + SNAP_DX * 3.5, FOOT_Y, 1.8, FONT_MED, SOFT, spacing=0.08))
+    add(text(str(j + 1), SNAP_X0 + SNAP_DX * j, JACK_LABEL_Y, 2.9, FONT_BOLD, AMBER if j == 0 else INK))
+add(text("SNAPSHOTS", SNAP_X0 + SNAP_DX * 3.5, FOOT_Y, 2.1, FONT_MED, SOFT, spacing=0.08))
 
 # outputs
-add(f'<rect x="197.6" y="113.2" width="45.8" height="14.6" rx="1.2" fill="{OUTBOX}"/>')
+add(f'<rect x="{OUT_X[0] - 6.4}" y="113.0" width="{OUT_X[3] - OUT_X[0] + 12.8}" height="14.8" rx="1.2" fill="{OUTBOX}"/>')
 for x, lab in zip(OUT_X, ["CLK", "EOC", "GATE", "PITCH"]):
-    add(text(lab, x, JACK_LABEL_Y, 1.9, FONT_BOLD, OUT_TEXT))
-add(text("OUT", OUT_X[0] + (OUT_X[3] - OUT_X[0]) / 2, FOOT_Y, 1.8, FONT_MED, SOFT, spacing=0.1))
+    add(text(lab, x, JACK_LABEL_Y, 2.9, FONT_BOLD, OUT_TEXT))
+add(text("OUT", OUT_X[0] + (OUT_X[3] - OUT_X[0]) / 2, FOOT_Y, 2.1, FONT_MED, SOFT, spacing=0.1))
 
 # --- wide pitch slider parts (keep sizes in step with WideSlider in src/Metroplex.cpp)
 SL_W, SL_H = 9.6, 26.0
